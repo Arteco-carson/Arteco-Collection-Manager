@@ -1,0 +1,46 @@
+using System;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+
+namespace FineArtApi.Models
+{
+    [Table("UserProfiles")]
+    public class UserProfile
+    {
+        [Key]
+        public int ProfileId { get; set; }
+
+        [Required]
+        [StringLength(100)]
+        public string ExternalUserId { get; set; } = null!; // Resolves CS8618
+
+        [StringLength(100)]
+        public string? FirstName { get; set; } // Nullable to match SQL schema
+
+        [StringLength(100)]
+        public string? LastName { get; set; } // Nullable to match SQL schema
+
+        [Required]
+        [StringLength(255)]
+        public string EmailAddress { get; set; } = null!; // Resolves CS8618
+
+        [StringLength(100)]
+        public string Username { get; set; } = null!; // Resolves CS8618
+
+        public string PasswordHash { get; set; } = null!; // Resolves CS8618
+
+        public string? Salt { get; set; } // Matches SQL schema nullable status
+
+        public string UserRole { get; set; } = "Guest";
+
+        public bool IsActive { get; set; } = true;
+
+        public DateTime? TermsAcceptedDate { get; set; }
+
+        public bool MarketingConsent { get; set; }
+
+        public DateTime? LastLoginDate { get; set; }
+
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    }
+}
