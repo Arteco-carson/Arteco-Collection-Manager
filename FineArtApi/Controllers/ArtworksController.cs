@@ -3,10 +3,15 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using FineArtApi.Data;
 using FineArtApi.Models;
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Security.Claims;
+using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 
 namespace FineArtApi.Controllers
 {
@@ -16,12 +21,46 @@ namespace FineArtApi.Controllers
     public class ArtworksController : ControllerBase
     {
         private readonly ArtContext _context;
+        private readonly IWebHostEnvironment _env;
 
-        public ArtworksController(ArtContext context)
+        public ArtworksController(ArtContext context, IWebHostEnvironment env)
         {
             _context = context;
+            _env = env;
         }
 
+        [HttpPost("upload-images")]
+        public async Task<IActionResult> UploadImages([FromForm] List<IFormFile> files)
+        {
+            if (files == null || files.Count == 0)
+                return BadRequest("No files uploaded.");
+
+            var imageUrls = new List<string>();
+            var uploadsFolderPath = Path.Combine(_env.WebRootPath, "uploads");
+
+            if (!Directory.Exists(uploadsFolderPath))
+            {
+                Directory.CreateDirectory(uploadsFolderPath);
+            }
+
+            foreach (var file in files)
+            {
+                if (file.Length > 0)
+                {
+                    var fileName = Guid.NewGuid().ToString() + Path.GetExtension(file.FileName);
+                    var filePath = Path.Combine(uploadsFolderPath, fileName);
+
+                    using (var stream = new FileStream(filePath, FileMode.Create))
+                    {
+                        await file.CopyToAsync(stream);
+                    }
+                    imageUrls.Add($"/uploads/{fileName}");
+                }
+            }
+
+            return Ok(new { imageUrls });
+        }
+        
         // NEW: Endpoint for user-scoped artwork inventory (ISO27001 Compliance)
         [HttpGet("user")]
         public async Task<ActionResult<IEnumerable<object>>> GetUserArtworks([FromQuery] int? collectionId)
@@ -138,6 +177,56 @@ namespace FineArtApi.Controllers
           }
         }
 
+        [HttpPost]
+        public async Task<ActionResult<Artwork>> PostArtwork(ArtworkCreateDto artworkDto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("id");
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int profileId))
+            {
+                return Unauthorized(new { message = "Security Identity missing or invalid." });
+            }
+
+            var artwork = new Artwork
+            {
+                Title = artworkDto.Title,
+                ArtistId = artworkDto.ArtistId,
+                Medium = artworkDto.Medium,
+                HeightCM = artworkDto.HeightCM,
+                WidthCM = artworkDto.WidthCM,
+                DepthCM = artworkDto.DepthCM,
+                WeightKG = artworkDto.WeightKG,
+                CreationDateDisplay = artworkDto.CreationDateDisplay,
+                ProvenanceText = artworkDto.ProvenanceText,
+                AcquisitionCost = artworkDto.AcquisitionCost,
+                CreatedByProfileId = profileId,
+                CreatedAt = DateTime.UtcNow,
+                LastModifiedAt = DateTime.UtcNow
+            };
+
+            _context.Artworks.Add(artwork);
+            await _context.SaveChangesAsync();
+
+            if (artworkDto.ImageUrls != null && artworkDto.ImageUrls.Count > 0)
+            {
+                for (int i = 0; i < artworkDto.ImageUrls.Count; i++)
+                {
+                    var imageUrl = artworkDto.ImageUrls[i];
+                    var artworkImage = new ArtworkImage
+                    {
+                        ArtworkId = artwork.ArtworkId,
+                        BlobUrl = imageUrl,
+                        IsPrimary = (i == 0), // Set the first image as primary
+                        UploadedAt = DateTime.UtcNow
+                    };
+                    _context.ArtworkImages.Add(artworkImage);
+                }
+                await _context.SaveChangesAsync();
+            }
+
+            return CreatedAtAction(nameof(GetArtwork), new { id = artwork.ArtworkId }, artwork);
+        }
+
+
         [HttpPost("update-valuation/{id}")]
         public async Task<IActionResult> UpdateValuation(int id, [FromBody] ValuationUpdateRequest request)
         {
@@ -168,5 +257,22 @@ namespace FineArtApi.Controllers
             public decimal NewValuation { get; set; }
             public System.DateTime EffectiveDate { get; set; }
         }
+    }
+
+    public class ArtworkCreateDto
+    {
+        [Required]
+        [StringLength(200)]
+        public string Title { get; set; } = null!;
+        public int? ArtistId { get; set; }
+        public string? Medium { get; set; }
+        public decimal? HeightCM { get; set; }
+        public decimal? WidthCM { get; set; }
+        public decimal? DepthCM { get; set; }
+        public decimal? WeightKG { get; set; }
+        public string? CreationDateDisplay { get; set; }
+        public string? ProvenanceText { get; set; }
+        public decimal? AcquisitionCost { get; set; }
+        public List<string>? ImageUrls { get; set; }
     }
 }

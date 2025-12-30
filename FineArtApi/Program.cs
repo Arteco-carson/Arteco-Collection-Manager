@@ -59,7 +59,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+app.UseStaticFiles(); // Serve files from wwwroot
 app.UseCors("AllowMobile");
 app.UseAuthentication();
 app.UseAuthorization();

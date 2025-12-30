@@ -31,10 +31,21 @@ namespace FineArtApi.Models
         [Column(TypeName = "decimal(10, 2)")]
         public decimal? WidthCM { get; set; }
 
+        [Column(TypeName = "decimal(10, 2)")]
+        public decimal? DepthCM { get; set; }
+
+        [Column(TypeName = "decimal(10, 2)")]
+        public decimal? WeightKG { get; set; }
+
+        [StringLength(50)]
+        public string? CreationDateDisplay { get; set; }
+
         [Column("AcquisitionCost", TypeName = "decimal(19, 4)")]
         public decimal? AcquisitionCost { get; set; }
 
         public DateTime? AcquisitionDate { get; set; }
+
+        public string? ProvenanceText { get; set; }
 
         public string? Status { get; set; }
 
