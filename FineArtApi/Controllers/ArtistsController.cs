@@ -80,6 +80,27 @@ namespace FineArtApi.Controllers
 
             return artist;
         }
+
+        // DELETE: api/Artists/5
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteArtist(int id)
+        {
+            var artist = await _context.Artists.FindAsync(id);
+            if (artist == null)
+            {
+                return NotFound();
+            }
+
+            if (await _context.Artworks.AnyAsync(a => a.ArtistId == id))
+            {
+                return BadRequest(new { message = "Cannot delete artist. They still have artworks in the inventory." });
+            }
+
+            _context.Artists.Remove(artist);
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
     }
 
     public class ArtistCreateDto

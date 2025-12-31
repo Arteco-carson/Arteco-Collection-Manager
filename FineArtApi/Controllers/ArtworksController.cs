@@ -61,6 +61,21 @@ namespace FineArtApi.Controllers
             return Ok(new { imageUrls });
         }
         
+        [HttpGet("editions")]
+        public async Task<ActionResult<IEnumerable<object>>> GetEditions()
+        {
+            // Project to anonymous object to avoid circular references and over-fetching
+            return await _context.Set<Edition>()
+                .Select(e => new {
+                    e.EditionId,
+                    e.EditionType,
+                    e.Marking,
+                    e.Rarity,
+                    e.EstimatedValueRelative
+                })
+                .ToListAsync();
+        }
+
         // NEW: Endpoint for user-scoped artwork inventory (ISO27001 Compliance)
         [HttpGet("user")]
         public async Task<ActionResult<IEnumerable<object>>> GetUserArtworks([FromQuery] int? collectionId)
@@ -75,8 +90,8 @@ namespace FineArtApi.Controllers
             var query = _context.Artworks
                 .Include(a => a.Artist)
                 .Include(a => a.ArtworkImages)
-                .Where(a => a.CollectionArtworks.Any(ca => 
-                    ca.Collection.OwnerProfileId == profileId))
+                .Where(a => a.CollectionArtworks.Any(ca => ca.Collection.OwnerProfileId == profileId) 
+                            || a.CreatedByProfileId == profileId)
                 .AsQueryable();
 
             if (collectionId.HasValue)
@@ -144,6 +159,7 @@ namespace FineArtApi.Controllers
             var artwork = await _context.Artworks
                 .Include(a => a.ArtworkImages)
                 .Include(a => a.Artist) 
+                .Include(a => a.Edition)
                 .Include(a => a.CollectionArtworks)
                 .ThenInclude(ca => ca.Collection)
                 .FirstOrDefaultAsync(a => a.ArtworkId == id);
@@ -160,7 +176,18 @@ namespace FineArtApi.Controllers
               artwork.HeightCM,
               artwork.WidthCM,
               artwork.AcquisitionCost,
+              artwork.AcquisitionDate,
+              artwork.CreationDateDisplay,
+              artwork.ProvenanceText,
               artwork.Status,
+              artwork.Frame,
+              artwork.LotNumber,
+              Edition = artwork.Edition != null ? new {
+                  artwork.Edition.EditionType,
+                  artwork.Edition.Marking,
+                  artwork.Edition.EstimatedValueRelative,
+                  artwork.Edition.Rarity
+              } : null,
               ArtworkImages = (artwork.ArtworkImages ?? new List<ArtworkImage>())
                   .Select(i => new { Id = i.ImageId, i.BlobUrl, i.IsPrimary })
                   .ToList(),
@@ -186,6 +213,21 @@ namespace FineArtApi.Controllers
                 return Unauthorized(new { message = "Security Identity missing or invalid." });
             }
 
+            // Handle inline Edition creation if details are provided
+            if (!string.IsNullOrEmpty(artworkDto.EditionType) || !string.IsNullOrEmpty(artworkDto.EditionMarking))
+            {
+                var edition = new Edition
+                {
+                    EditionType = artworkDto.EditionType,
+                    Marking = artworkDto.EditionMarking,
+                    Rarity = artworkDto.EditionRarity,
+                    EstimatedValueRelative = artworkDto.EditionValue
+                };
+                _context.Add(edition);
+                await _context.SaveChangesAsync();
+                artworkDto.EditionId = edition.EditionId;
+            }
+
             var artwork = new Artwork
             {
                 Title = artworkDto.Title,
@@ -198,6 +240,9 @@ namespace FineArtApi.Controllers
                 CreationDateDisplay = artworkDto.CreationDateDisplay,
                 ProvenanceText = artworkDto.ProvenanceText,
                 AcquisitionCost = artworkDto.AcquisitionCost,
+                Frame = artworkDto.Frame,
+                LotNumber = artworkDto.LotNumber,
+                EditionId = artworkDto.EditionId,
                 CreatedByProfileId = profileId,
                 CreatedAt = DateTime.UtcNow,
                 LastModifiedAt = DateTime.UtcNow
@@ -252,6 +297,43 @@ namespace FineArtApi.Controllers
             }
         }
 
+        // DELETE: api/Artworks/5
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteArtwork(int id)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("id");
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int profileId))
+            {
+                return Unauthorized(new { message = "Security Identity missing or invalid." });
+            }
+
+            var artwork = await _context.Artworks.FindAsync(id);
+            if (artwork == null) return NotFound();
+
+            // Capture ArtistId to check for cleanup after deletion
+            var artistId = artwork.ArtistId;
+
+            _context.Artworks.Remove(artwork);
+            await _context.SaveChangesAsync();
+
+            // If this was the last artwork for the artist, delete the artist as well
+            if (artistId.HasValue)
+            {
+                var hasRemainingArtworks = await _context.Artworks.AnyAsync(a => a.ArtistId == artistId.Value);
+                if (!hasRemainingArtworks)
+                {
+                    var artist = await _context.Set<Artist>().FindAsync(artistId.Value);
+                    if (artist != null)
+                    {
+                        _context.Set<Artist>().Remove(artist);
+                        await _context.SaveChangesAsync();
+                    }
+                }
+            }
+
+            return NoContent();
+        }
+
         public class ValuationUpdateRequest
         {
             public decimal NewValuation { get; set; }
@@ -273,6 +355,13 @@ namespace FineArtApi.Controllers
         public string? CreationDateDisplay { get; set; }
         public string? ProvenanceText { get; set; }
         public decimal? AcquisitionCost { get; set; }
+        public bool? Frame { get; set; }
+        public string? LotNumber { get; set; }
+        public int? EditionId { get; set; }
+        public string? EditionType { get; set; }
+        public string? EditionMarking { get; set; }
+        public string? EditionRarity { get; set; }
+        public string? EditionValue { get; set; }
         public List<string>? ImageUrls { get; set; }
     }
 }

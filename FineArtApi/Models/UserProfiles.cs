@@ -24,6 +24,9 @@ namespace FineArtApi.Models
         [StringLength(255)]
         public string EmailAddress { get; set; } = null!; // Resolves CS8618
 
+        [StringLength(50)]
+        public string? TelephoneNumber { get; set; }
+
         [StringLength(100)]
         public string Username { get; set; } = null!; // Resolves CS8618
 

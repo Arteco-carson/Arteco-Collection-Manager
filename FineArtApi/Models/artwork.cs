@@ -49,6 +49,16 @@ namespace FineArtApi.Models
 
         public string? Status { get; set; }
 
+        public bool? Frame { get; set; }
+
+        [StringLength(50)]
+        public string? LotNumber { get; set; }
+
+        public int? EditionId { get; set; }
+
+        [ForeignKey("EditionId")]
+        public virtual Edition? Edition { get; set; }
+
         // Added to resolve CS1061 and match SQL schema for ownership filtering
         public int? CreatedByProfileId { get; set; }
         

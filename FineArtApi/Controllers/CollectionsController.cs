@@ -148,6 +148,41 @@ namespace FineArtApi.Controllers
 
             return CreatedAtAction(nameof(GetCollection), new { id = collection.CollectionId }, result);
         }
+
+        // DELETE: api/Collections/5
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteCollection(int id)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("id");
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int profileId))
+            {
+                return Unauthorized(new { message = "Security Identity missing or invalid." });
+            }
+
+            var collection = await _context.Collections.FindAsync(id);
+            if (collection == null)
+            {
+                return NotFound();
+            }
+
+            if (collection.OwnerProfileId != profileId)
+            {
+                return Forbid();
+            }
+
+            // 1. Remove the links in the junction table (CollectionArtworks)
+            var collectionArtworks = _context.CollectionArtworks.Where(ca => ca.CollectionId == id);
+            if (collectionArtworks.Any())
+            {
+                _context.CollectionArtworks.RemoveRange(collectionArtworks);
+            }
+
+            // 2. Delete the Collection itself
+            _context.Collections.Remove(collection);
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
     }
 
     public class CollectionCreateDto
